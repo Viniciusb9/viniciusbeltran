@@ -1,0 +1,88 @@
+import pandas as pd
+import numpy as np
+from sklearn.ensemble import RandomForestRegressor
+from sklearn import metrics
+import matplotlib.pyplot as plt
+
+# Carregar os dados
+df = pd.read_excel(r'C:\\Users\\mia.visantos\\Downloads\\Projetoprev\\EPR_DATA_APP.xlsx')
+
+# Converter a coluna de data para datetime e definir como índice
+df["DATE"] = pd.to_datetime(df['DATE'])
+df.set_index('DATE', inplace=True)
+
+# Resample para dados mensais
+df_mensal = df.resample('ME').sum()
+
+# Função para criar features
+def criar_features(df):
+    df['Month'] = df.index.month
+    df['Year'] = df.index.year
+    
+    for lag in range(1, 13):
+        df[f'lag_{lag}'] = df['TEUS'].shift(lag)
+    
+    ## excluir valores nulos
+    df.dropna(inplace=True)
+    return df
+
+# Aplicar a função de criação de features
+df_mensal = criar_features(df_mensal)
+
+# Definir X e y
+x = df_mensal.drop(columns=['TEUS'])
+y = df_mensal['TEUS']
+
+# Dividir os dados de treino e teste
+train = df_mensal[df_mensal.index < '2023-09-30']
+test = df_mensal[df_mensal.index >= '2023-09-30']
+
+x_train = train.drop('TEUS', axis=1)
+y_train = train['TEUS']
+x_test = test.drop('TEUS', axis=1)
+y_test = test['TEUS']
+
+# Construir o modelo
+modelo_rf = RandomForestRegressor(n_estimators=150, bootstrap=True, random_state=42)
+modelo_rf.fit(x_train, y_train)
+
+# Fazer previsões
+y_pred = modelo_rf.predict(x_test)
+
+
+
+# calculating the model perf
+mse = metrics.mean_squared_error(y_test, y_pred)
+mae = metrics.mean_absolute_error(y_test, y_pred)
+rmse = np.sqrt(mse)
+mape = np.mean(np.abs((y_test - y_pred) / y_test)) * 100  # Calculado manualmente
+r2 = metrics.r2_score(y_test, y_pred)
+
+print(f"MSE = {mse}")
+print(f"MAE = {mae}")
+print(f"RMSE = {rmse}")
+print(f"MAPE = {mape}")
+print(f"R2 = {r2}")
+
+
+## Defining future preds
+
+future_steps = 24 ## 24 meses a frente
+last_date = df_mensal.index[-1] ## para pegar a ultima data disponivel
+future_dates = pd.date_range(start=last_date + pd.DateOffset(months=1), periods=future_steps, freq='ME')
+
+last_values = df_mensal.iloc[-1].copy() ##iloc usado para selecionar a ultima linhda do df, ou seja, para determinar de onde ira comecar a previsao
+
+for date in future_dates:
+    last_values['Month'] = date.month
+    last_values['Year'] = date.year
+    
+    for lag in range(1,13):
+        if lag == 1:
+            last_values[f'lag_{lag}'] = last_values['TEUS']
+        else:    
+            last_values[f'lag_{lag}'] = future_dates.iloc[-lag]['TEUS'] if len(future_dates) >= lag else df_mensal.iloc[-lag]['TEUS']
+    
+    future_features = last_values.drop('TEUS')
+    print(future_features)
+    
